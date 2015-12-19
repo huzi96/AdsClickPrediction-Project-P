@@ -1,0 +1,5 @@
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\bin\Release\magic_mat.exe.config
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\bin\Release\magic_mat.exe
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\bin\Release\magic_mat.pdb
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\obj\Release\magic_mat.exe
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\obj\Release\magic_mat.pdb

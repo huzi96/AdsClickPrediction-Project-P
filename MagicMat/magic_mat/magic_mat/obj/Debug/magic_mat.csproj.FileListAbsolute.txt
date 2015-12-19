@@ -1,0 +1,6 @@
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\bin\Debug\magic_mat.exe.config
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\bin\Debug\magic_mat.exe
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\bin\Debug\magic_mat.pdb
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\obj\Debug\magic_mat.csprojResolveAssemblyReference.cache
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\obj\Debug\magic_mat.exe
+C:\Users\huzi9\Documents\MagicMat\magic_mat\magic_mat\obj\Debug\magic_mat.pdb
