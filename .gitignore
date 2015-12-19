@@ -203,3 +203,5 @@ DerivedData/
 BayesClassifier/.DS_Store
 #Xcode project
 BayesAdapt.xcodeproj
+
+.DS_STORE
