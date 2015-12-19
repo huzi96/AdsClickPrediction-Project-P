@@ -1,0 +1,506 @@
+#include "Header.h"
+/*
+ 1.读取所有数据，把有click的找出来
+ 2.在这87个里面，统计各个维度出现的频率
+    例如，对于OS，P(OS_1|click)=(OS_1的个数 ／ 87)
+ 3.在全部里面，统计各个维度出现的频率
+ 4.click常数 ＝ 0.0670488
+ */
+#define OBJID ip_id
+#define OBJHASH ip_hash
+#define OBJ_STRING OS_info
+//#define STAT
+
+#define CLICK 0.0670488
+
+Info *table;
+const int scale = 9615384;
+vector<int> clicked;
+long clicked_number=0;
+const unsigned mask = 0xFFFF;
+int barrel[mask+1]={0};
+
+bool strEqual(char *o1, char *o2);
+void readAllData();
+void findAllClicked();
+void stat_pos();
+void stat_id();
+void stat_os();
+void stat_stable();
+void stat_ads();
+void clicked_handle();
+void stat_handle();
+void clicked_string_handle();
+void stat_string_handle();
+
+class Collide_exception : public exception
+{
+public:
+    virtual const char* what() const throw()
+    {
+        return "Hash Table Collided";
+    }
+} collide_exception;
+
+template<class T>
+class Hash_16bits
+{
+public:
+    size_t operator () (const T &op) const
+    {
+        size_t seed = 13131;
+        size_t hash = 0;
+        char *str = (char *)&op;
+        for (int i=0; i<16; i++)
+        {
+            hash = hash * seed + (*str++);
+        }
+        return (hash & mask);
+    }
+};
+
+class Hash_string
+{
+public:
+    size_t operator () (const string &op) const
+    {
+        size_t seed = 1313131;
+        size_t hash = 0;
+        const char *str = op.c_str();
+        while (*str!=0 && (str - op.c_str())<20 )//防止越界,写法太奇怪
+        {
+            hash = hash * seed + (*str++);
+        }
+        return (hash & mask);
+    }
+};
+
+unsigned int RSHash(char *str)
+{
+    unsigned int b = 378551;
+    unsigned int a = 63689;
+    unsigned int hash = 0;
+    
+    while (*str)
+    {
+        hash = hash * a + (*str++);
+        a *= b;
+    }
+    
+    return (hash & 0x7FFFFFFF);
+}
+
+
+void predict(HASH_VALUE request_id, HASH_VALUE request_pos)
+{
+    //选定用户,根据用户生成用户向量
+    //我偷懒，就选第一条
+    Info selected_vec;
+    for (int i=0; i<scale; i++)
+    {
+        if (table[i].id == request_id)
+        {
+            selected_vec = table[i];
+        }
+    }
+    //选定监测点
+    selected_vec.pos_id = request_pos;
+    //生成完整向量
+    //读入所有生成的概率表
+    string forms[]={
+        "cl_id","cl_pos","cl_ads","cl_ip"
+    };
+    typedef HASH_VALUE* pHash_Value;
+    pHash_Value requests[4]={
+        &selected_vec.id,&selected_vec.pos_id,&selected_vec.ads_id,&selected_vec.ip_id
+    };
+    double P[4]={0};
+    for (int i=0; i<4; i++)
+    {
+        fstream fin(forms[i]+".txt");
+        string hashid;
+        double potiential;
+        while (fin>>hashid>>potiential)
+        {
+            if (HASH_VALUE(hashid) == *(requests[i]))
+            {
+                P[i] = potiential;
+                fin.close();
+                break;
+            }
+        }
+        if(P[i]==0) P[i]=1e-7;//A trick
+        fin.close();
+    }
+    
+    string stats[]={
+        "id_stat","ip_stat","ads_stat","pos_stat"
+    };
+    double Q[4]={0};
+    for (int i=0; i<4; i++)
+    {
+        fstream fin(stats[i]+".txt");
+        string hashid;
+        double potiential;
+        while (fin>>hashid>>potiential)
+        {
+            if (HASH_VALUE(hashid) == *(requests[i]))
+            {
+                Q[i] = potiential;
+                fin.close();
+                break;
+            }
+        }
+        if(Q[i]==0) Q[i]=1e-7;//A trick
+        fin.close();
+    }
+    //计算概率
+    double final_p = CLICK * P[0]/Q[0] * P[1]/Q[1] * P[2]/Q[2] * P[3]/Q[3];
+    printf("%.4lf\n",final_p);
+}
+
+int main()
+{
+    readAllData();
+#ifdef STAT
+    stat_handle();
+#else
+    findAllClicked();
+    stat_string_handle();
+#endif
+    //predict(HASH_VALUE("ZjkxMzg5OGYwNjQz"), HASH_VALUE("MzExZjI3YjY3Njdh"));
+//    for (int i=0; i<100; i++)
+//    {
+//        predict(table[i].id, table[i].pos_id);
+//    }
+    delete []table;
+    return 0;
+}
+
+
+bool strEqual(char *o1,char *o2)//写法奇葩
+{
+    long *p1 = (long *)(o1+3), *p2 = (long *)(o2+3);
+    return *p1==*p2;
+}
+
+void readAllData()
+{
+    table = new Info[scale];
+    fstream fin("preprocessed.data");
+    fin.read((char *)table, scale*sizeof(Info));
+    fin.close();
+}
+
+void findAllClicked()
+{
+    for (int i=0; i<scale; i++)
+    {
+        if (table[i].click==1)
+        {
+            clicked.push_back(i);
+        }
+    }
+    clicked_number = clicked.size();
+    
+}
+
+///////////////////////////////////////////////////////////////////////////
+void stat_handle()
+{
+    using namespace __gnu_cxx;
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> > OBJHASH;
+    for (int i=0; i<scale; i++)
+    {
+        if (OBJHASH.count(table[i].pos_id)!=0)
+        {
+            if( !(OBJHASH[table[i].pos_id] == table[i].OBJID) )
+            {
+                cout<<"collide at "<<i<<endl;
+                return;
+            }
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].OBJID) ]++;
+        }
+        else
+        {
+            OBJHASH.insert(pair<HASH_VALUE, HASH_VALUE>(table[i].OBJID, table[i].OBJID));
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].OBJID) ]++;
+        }
+    }
+    unsigned int sum=0;
+    for (int i=0; i<mask+1; i++)
+    {
+        sum+=barrel[i];
+    }
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> >::iterator it;
+    for (it = OBJHASH.begin(); it != OBJHASH.end(); it++)
+    {
+        cout<<(*it).second;
+        printf("\t%.12lf\n",(double)barrel[Hash_16bits<HASH_VALUE>()((*it).first)]/sum);
+    }
+}
+
+void clicked_handle()
+{
+    using namespace __gnu_cxx;
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> > OBJHASH;
+    for (int i=0; i<clicked_number; i++)
+    {
+        int selected_item = clicked[i];
+        if (OBJHASH.count(table[selected_item].OBJID)!=0)
+        {
+            if( !(OBJHASH[table[selected_item].OBJID] == table[selected_item].OBJID) )
+            {
+                cout<<"collide at "<<i<<endl;
+                return;
+            }
+            barrel[ Hash_16bits<HASH_VALUE>()(table[selected_item].OBJID) ]++;
+        }
+        else
+        {
+            OBJHASH.insert(pair<HASH_VALUE, HASH_VALUE>(table[selected_item].OBJID, table[selected_item].OBJID));
+            barrel[ Hash_16bits<HASH_VALUE>()(table[selected_item].OBJID) ]++;
+        }
+    }
+    unsigned int sum=0;
+    for (int i=0; i<mask+1; i++)
+    {
+        sum+=barrel[i];
+    }
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> >::iterator it;
+    for (it = OBJHASH.begin(); it != OBJHASH.end(); it++)
+    {
+        cout<<(*it).second;
+        printf("\t%.12lf\n",(double)barrel[Hash_16bits<HASH_VALUE>()((*it).first)]/sum);
+    }
+}
+///////////////////////////////////////////////////////////////////////////
+
+void clicked_string_handle()
+{
+    //找出所有的clicked
+    //检查存在性
+    //在hash表里面注册
+    //在barrel里面注册
+    
+    
+    //hash表
+    using namespace __gnu_cxx;
+    hash_map<string, string, Hash_string> hashMap;
+    //所有的clicked
+    for (int i=0; i<clicked_number; i++)
+    {
+        //选出来的Info
+        Info selected  = table[clicked[i]];
+        //检查存在性
+        if (hashMap.count(selected.OBJ_STRING) == 0)//不存在
+        {
+            //在hash表中注册
+            hashMap.insert(pair<string, string>(selected.OBJ_STRING, selected.OBJ_STRING));
+        }
+        else //检查碰撞
+            if (hashMap[selected.OBJ_STRING] != selected.OBJ_STRING)
+            {
+                throw collide_exception;
+            }
+        //在barrel中注册
+        barrel[ Hash_string()(selected.OBJ_STRING) ]++;
+    }
+    //输出概率
+    hash_map<string, string, Hash_string>::iterator it = hashMap.begin();
+    for (; it != hashMap.end(); it++)
+    {
+        printf("%s\t%.12lf\n",it->second.c_str(), (double)barrel[ Hash_string()(it->first) ]/clicked_number);
+    }
+}
+
+void stat_string_handle()
+{
+    //检查存在性
+    //在hash表里面注册
+    //在barrel里面注册
+    
+    
+    //hash表
+    using namespace __gnu_cxx;
+    hash_map<string, string, Hash_string> hashMap;
+    //所有
+    for (int i=0; i<scale; i++)
+    {
+        //选出来的Info
+        Info selected  = table[i];
+        //检查存在性
+        if (hashMap.count(selected.OBJ_STRING) == 0)//不存在
+        {
+            //在hash表中注册
+            hashMap.insert(pair<string, string>(selected.OBJ_STRING, selected.OBJ_STRING));
+        }
+        else //检查碰撞
+            if (hashMap[selected.OBJ_STRING] != selected.OBJ_STRING)
+            {
+                throw collide_exception;
+            }
+        //在barrel中注册
+        barrel[ Hash_string()(selected.OBJ_STRING) ]++;
+    }
+    //输出概率
+    hash_map<string, string, Hash_string>::iterator it = hashMap.begin();
+    for (; it != hashMap.end(); it++)
+    {
+        printf("%s\t%.12lf\n",it->second.c_str(), (double)barrel[ Hash_string()(it->first) ]/scale);
+    }
+}
+
+
+
+
+void stat_id()
+{
+    using namespace __gnu_cxx;
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> > id_hash;
+    for (int i=0; i<scale; i++)
+    {
+        if (id_hash.count(table[i].id)!=0)
+        {
+            if( !(id_hash[table[i].id] == table[i].id) )
+            {
+                cout<<"collide at "<<i<<endl;
+                return;
+            }
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].id) ]++;
+        }
+        else
+        {
+            id_hash.insert(pair<HASH_VALUE, HASH_VALUE>(table[i].id, table[i].id));
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].id) ]++;
+        }
+    }
+    unsigned int sum=0;
+    for (int i=0; i<mask+1; i++)
+    {
+        sum+=barrel[i];
+    }
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> >::iterator it;
+    for (it = id_hash.begin(); it != id_hash.end(); it++)
+    {
+        cout<<(*it).second;
+        printf("\t%.12lf\n",(double)barrel[Hash_16bits<HASH_VALUE>()((*it).first)]/sum);
+    }
+}
+
+void stat_os()//有BUG
+{
+    typedef char * pchar;
+    using namespace __gnu_cxx;
+    hash_map<pchar, pchar, Hash_string > id_hash;
+    for (int i=0; i<scale; i++)
+    {
+        if (id_hash.count(table[i].OS_info)!=0)
+        {
+            if( !(strEqual(id_hash[table[i].OS_info],table[i].OS_info)) )
+            {
+                cout<<"collide at "<<i<<endl;
+                return;
+            }
+            barrel[ Hash_string()(table[i].OS_info) ]++;
+        }
+        else
+        {
+            id_hash.insert(pair<pchar, pchar>(table[i].OS_info, table[i].OS_info));
+            barrel[ Hash_string()(table[i].OS_info) ]++;
+        }
+    }
+    unsigned int sum=0;
+    for (int i=0; i<mask+1; i++)
+    {
+        sum+=barrel[i];
+    }
+    hash_map<pchar, pchar, Hash_string >::iterator it;
+    for (it = id_hash.begin(); it != id_hash.end(); it++)
+    {
+        cout<<(*it).second;
+        //printf("\t%.12lf\n",(double)barrel[Hash_string()((*it).first)]/sum);
+        printf("\t%d\n",barrel[Hash_string()((*it).first)]);
+    }
+}
+
+void stat_stable()
+{
+    int stable_number=0;
+    for (int i=0; i<scale; i++)
+    {
+        if (table[i].stable==1)
+        {
+            stable_number++;
+        }
+    }
+    cout<<stable_number<<endl<<scale-stable_number<<endl;
+}
+
+void stat_ads()
+{
+    using namespace __gnu_cxx;
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> > ads_hash;
+    for (int i=0; i<scale; i++)
+    {
+        if (ads_hash.count(table[i].ads_id)!=0)
+        {
+            if( !(ads_hash[table[i].ads_id] == table[i].ads_id) )
+            {
+                cout<<"collide at "<<i<<endl;
+                return;
+            }
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].ads_id) ]++;
+        }
+        else
+        {
+            ads_hash.insert(pair<HASH_VALUE, HASH_VALUE>(table[i].ads_id, table[i].ads_id));
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].ads_id) ]++;
+        }
+    }
+    unsigned int sum=0;
+    for (int i=0; i<mask+1; i++)
+    {
+        sum+=barrel[i];
+    }
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> >::iterator it;
+    for (it = ads_hash.begin(); it != ads_hash.end(); it++)
+    {
+        cout<<(*it).second;
+        printf("\t%.12lf\n",(double)barrel[Hash_16bits<HASH_VALUE>()((*it).first)]/sum);
+    }
+}
+
+void stat_pos()
+{
+    using namespace __gnu_cxx;
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> > pos_hash;
+    for (int i=0; i<scale; i++)
+    {
+        if (pos_hash.count(table[i].pos_id)!=0)
+        {
+            if( !(pos_hash[table[i].pos_id] == table[i].pos_id) )
+            {
+                cout<<"collide at "<<i<<endl;
+                return;
+            }
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].pos_id) ]++;
+        }
+        else
+        {
+            pos_hash.insert(pair<HASH_VALUE, HASH_VALUE>(table[i].pos_id, table[i].pos_id));
+            barrel[ Hash_16bits<HASH_VALUE>()(table[i].pos_id) ]++;
+        }
+    }
+    unsigned int sum=0;
+    for (int i=0; i<mask+1; i++)
+    {
+        sum+=barrel[i];
+    }
+    hash_map<HASH_VALUE, HASH_VALUE, Hash_16bits<HASH_VALUE> >::iterator it;
+    for (it = pos_hash.begin(); it != pos_hash.end(); it++)
+    {
+        cout<<(*it).second;
+        printf("\t%.12lf\n",(double)barrel[Hash_16bits<HASH_VALUE>()((*it).first)]/sum);
+    }
+}
